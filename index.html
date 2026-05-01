@@ -68,7 +68,7 @@
   <div class="header-icon">🏖️</div>
   <div>
     <h1>Control de Vacaciones</h1>
-    <p id="headerSub">INDRA· 12 colaboradores</p>
+    <p id="headerSub">INDRA · 12 colaboradores</p>
   </div>
 </div>
 
@@ -96,7 +96,7 @@
     <div class="form-group"><label>Nombre completo</label><input type="text" id="empNombre"/></div>
     <div class="form-group"><label>Rol</label><select id="empRol"><option>Big Data</option><option>Cloud</option></select></div>
     <div class="form-group"><label>SQ</label><select id="empSQ"></select></div>
-    <div class="form-group"><label>Focal</label><select id="empFocal"><option>Débora Rimas</option></select></div>
+    <div class="form-group"><label>Focal</label><select id="empFocal"></select></div>
     <div class="form-group"><label>Días asignados</label><input type="number" id="empDias" value="30"/></div>
     <div class="form-group"><label>Comentarios</label><textarea id="empComentarios"></textarea></div>
     <div class="modal-actions">
@@ -115,12 +115,8 @@
     <div class="form-group"><label>Fecha fin</label><input type="date" id="pFin" oninput="updateDaysPreview()"/></div>
     <div id="daysPreview" class="days-preview hidden"></div>
     <div class="form-group"><label>Estado</label>
-      <select id="pEstado">
-        <option>Solicitado</option>
-        <option>Reportado a INDRA</option>
-        <option>En proceso de Goce</option>
-        <option>Finalizada</option>
-      </select>
+      <!-- Las opciones se generan dinámicamente desde const ESTADOS -->
+      <select id="pEstado"></select>
     </div>
     <div class="form-group"><label>Comentario</label><textarea id="pComentario"></textarea></div>
     <div class="modal-actions">
@@ -140,8 +136,16 @@ const SQS = [
   "SQ SALESFORCE - CORPORACIONES Y EMPRESAS",
   "UNIDAD GEST Y DESHERRA DE INFORMACION","YAKU"
 ];
-const ESTADOS = ["Solicitado","Reportado a INDRA","En proceso de Goce","Finalizada"];
-const ESTADO_COLOR = {"Solicitado":"#f59e0b","Reportado a INDRA":"#3b82f6","En proceso de Goce":"#8b5cf6","Finalizada":"#10b981"};
+const FCL = [
+  "Débora Rimas","Roxana Castro","Eduardo Escusa",
+  "Alan Mato","Johana Loayza"
+];
+const ESTADOS = ["Cumpleaños","Lic. Maternidad","Fmto Fam","Otros","Solicitado","Reportado a INDRA","En proceso de Goce","Finalizada"];
+const ESTADO_COLOR = {
+  "Cumpleaños":"#ffd700","Lic. Maternidad":"#c464ae","Fmto Fam":"#a1a09d",
+  "Otros":"#912c3d","Solicitado":"#f59e0b","Reportado a INDRA":"#3b82f6",
+  "En proceso de Goce":"#8b5cf6","Finalizada":"#10b981"
+};
 const ROL_COLOR = {"Big Data":"#0ea5e9","Cloud":"#f97316"};
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9Cz9e1PrtmLy9oZ-us5uLG0OpTW0uXoUYwkKBEbAcUeB9bZHbPYngE9hw48z_aqIh-w/exec";
@@ -198,22 +202,25 @@ function badge(text, color) {
   return `<span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${text}</span>`;
 }
 
-// Init selects
 function initSelects() {
-  const sqSel = document.getElementById("fSQ");
-  sqSel.innerHTML = '<option>Todos</option>' + SQS.map(s=>`<option>${s}</option>`).join('');
-  document.getElementById("fFocal").innerHTML = '<option>Todos</option><option>Débora Rimas</option>';
+  // Filtro SQ
+  document.getElementById("fSQ").innerHTML = '<option>Todos</option>' + SQS.map(s=>`<option>${s}</option>`).join('');
+  // Filtro Focal
+  document.getElementById("fFocal").innerHTML = '<option>Todos</option>' + FCL.map(s=>`<option>${s}</option>`).join('');
+  // Filtro Estado
   document.getElementById("fEstado").innerHTML = '<option>Todos</option>' + ESTADOS.map(s=>`<option>${s}</option>`).join('');
-  const empSQ = document.getElementById("empSQ");
-  empSQ.innerHTML = SQS.map(s=>`<option>${s}</option>`).join('');
+  // Modal Empleado: SQ y Focal
+  document.getElementById("empFocal").innerHTML = FCL.map(s=>`<option>${s}</option>`).join('');
+  document.getElementById("empSQ").innerHTML = SQS.map(s=>`<option>${s}</option>`).join('');
+  // Modal Período: Estado generado desde ESTADOS
+  document.getElementById("pEstado").innerHTML = ESTADOS.map(s=>`<option>${s}</option>`).join('');
 }
 
 function setTab(t) {
   currentTab = t;
   document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab')[["tabla","periodos","calendario","resumen"].indexOf(t)].classList.add('active');
-  const fEstado = document.getElementById("fEstado");
-  fEstado.style.display = (t === "periodos") ? "" : "none";
+  document.getElementById("fEstado").style.display = (t === "periodos") ? "" : "none";
   render();
 }
 
@@ -397,18 +404,16 @@ function renderResumen() {
   </div>`;
 }
 
-// Calendar nav
 function calPrev() { calMonth--; if(calMonth<0){calMonth=11;calYear--;} render(); }
 function calNext() { calMonth++; if(calMonth>11){calMonth=0;calYear++;} render(); }
 
-// Emp modal
 function openAddEmp() {
   editEmpId = null;
   document.getElementById("empModalTitle").textContent = "Agregar colaborador";
   document.getElementById("empNombre").value = "";
   document.getElementById("empRol").value = "Big Data";
   document.getElementById("empSQ").value = SQS[0];
-  document.getElementById("empFocal").value = "Débora Rimas";
+  document.getElementById("empFocal").value = FCL[0];
   document.getElementById("empDias").value = 30;
   document.getElementById("empComentarios").value = "";
   document.getElementById("empModal").classList.remove("hidden");
@@ -450,7 +455,6 @@ function deleteEmp(id) {
   saveToStorage(); render();
 }
 
-// Period modal
 function populatePEmp(selectedId) {
   const sel = document.getElementById("pEmp");
   sel.innerHTML = employees.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
@@ -462,7 +466,8 @@ function openAddPeriod(empId) {
   populatePEmp(empId);
   document.getElementById("pInicio").value = "";
   document.getElementById("pFin").value = "";
-  document.getElementById("pEstado").value = "Solicitado";
+  // Resetea al primer estado de ESTADOS
+  document.getElementById("pEstado").value = ESTADOS[0];
   document.getElementById("pComentario").value = "";
   document.getElementById("daysPreview").classList.add("hidden");
   document.getElementById("periodModal").classList.remove("hidden");
@@ -509,7 +514,6 @@ function deletePeriod(id) {
   saveToStorage(); render();
 }
 
-// Init
 async function init() {
   await loadFromStorage();
   initSelects();
