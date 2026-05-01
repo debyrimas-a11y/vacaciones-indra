@@ -152,8 +152,16 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9Cz9e1PrtmLy9oZ-us
 
 async function saveToStorage() {
   try {
-    const url = `${SCRIPT_URL}?action=saveAll&employees=${encodeURIComponent(JSON.stringify(employees))}&periods=${encodeURIComponent(JSON.stringify(periods))}`;
-    await fetch(url, { method: "GET" });
+    const params = new URLSearchParams({
+      action: "saveAll",
+      employees: JSON.stringify(employees),
+      periods: JSON.stringify(periods)
+    });
+    const url = `${SCRIPT_URL}?${params.toString()}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok) console.error("Error al guardar:", data.error);
+    else console.log("✅ Guardado correctamente");
   } catch(err) {
     console.error("Error al guardar:", err);
   }
