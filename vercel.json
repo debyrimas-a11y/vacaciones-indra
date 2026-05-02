@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/save.js": {
+      "memory": 128,
+      "maxDuration": 30
+    }
+  }
+}
