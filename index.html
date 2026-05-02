@@ -148,20 +148,17 @@ const ESTADO_COLOR = {
 };
 const ROL_COLOR = {"Big Data":"#0ea5e9","Cloud":"#f97316"};
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9Cz9e1PrtmLy9oZ-us5uLG0OpTW0uXoUYwkKBEbAcUeB9bZHbPYngE9hw48z_aqIh-w/exec";
-
+const SCRIPT_URL = "/api/save";
 async function saveToStorage() {
   try {
-    const params = new URLSearchParams({
-      action: "saveAll",
-      employees: JSON.stringify(employees),
-      periods: JSON.stringify(periods)
+    const res = await fetch(SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "saveAll", employees, periods })
     });
-    const url = `${SCRIPT_URL}?${params.toString()}`;
-    const res = await fetch(url);
     const data = await res.json();
-    if (!data.ok) console.error("Error al guardar:", data.error);
-    else console.log("✅ Guardado correctamente");
+    if (data.ok) console.log("✅ Guardado en Google Sheets");
+    else console.error("❌ Error:", data.error);
   } catch(err) {
     console.error("Error al guardar:", err);
   }
@@ -169,11 +166,12 @@ async function saveToStorage() {
 
 async function loadFromStorage() {
   try {
-    document.getElementById("content").innerHTML = '<div style="text-align:center;padding:40px;color:#6b7280">⏳ Cargando datos desde Google Sheets...</div>';
+    document.getElementById("content").innerHTML =
+      '<div style="text-align:center;padding:40px;color:#6b7280">⏳ Cargando datos...</div>';
     const res = await fetch(SCRIPT_URL + "?action=getAll");
     const data = await res.json();
     if (data.employees) employees = data.employees.map(e => ({...e, id: Number(e.id), diasAsignados: Number(e.diasAsignados)}));
-    if (data.periods) periods = data.periods.map(p => ({...p, id: Number(p.id), empleadoId: Number(p.empleadoId)}));
+    if (data.periods)   periods   = data.periods.map(p => ({...p, id: Number(p.id), empleadoId: Number(p.empleadoId)}));
   } catch(err) {
     console.error("Error al cargar:", err);
   }
