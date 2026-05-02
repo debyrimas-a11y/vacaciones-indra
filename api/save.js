@@ -8,33 +8,34 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
-    // GET → getAll
+    // GET → getAll (datos pequeños, GET está bien)
     if (req.method === "GET") {
       const googleRes = await fetch(`${SCRIPT_URL}?action=getAll`);
       const data = await googleRes.json();
       return res.status(200).json(data);
     }
 
-    // POST → saveAll
+    // POST → saveAll usando POST a Google (evita límite de URL)
     if (req.method === "POST") {
-      const body = req.body;
-      console.log("Body recibido:", JSON.stringify(body).substring(0, 200));
+      const { employees, periods } = req.body;
 
-      const { employees, periods } = body;
-
-      const params = new URLSearchParams({
-        action: "saveAll",
-        employees: JSON.stringify(employees),
-        periods: JSON.stringify(periods)
+      const googleRes = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "saveAll",
+          employees,
+          periods
+        }),
+        redirect: "follow"
       });
 
-      const googleRes = await fetch(`${SCRIPT_URL}?${params.toString()}`);
       const text = await googleRes.text();
-      console.log("Respuesta de Google:", text.substring(0, 300));
+      console.log("Respuesta Google:", text.substring(0, 300));
 
       let data;
       try { data = JSON.parse(text); }
-      catch { data = { ok: false, error: "Google respondió: " + text.substring(0, 200) }; }
+      catch { data = { ok: false, error: "Google respondió: " + text.substring(0, 300) }; }
 
       return res.status(200).json(data);
     }
