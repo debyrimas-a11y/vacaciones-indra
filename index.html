@@ -16,11 +16,14 @@
   .tab.active { background: #2563eb; color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,.3); }
   .filters { background: #fff; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
   .filters span { font-size: 13px; font-weight: 600; color: #6b7280; }
-  .filters select { padding: 6px 10px; border-radius: 7px; border: 1px solid #d1d5db; font-size: 13px; cursor: pointer; }
+  .filters select, .filters input[type=text] { padding: 6px 10px; border-radius: 7px; border: 1px solid #d1d5db; font-size: 13px; cursor: pointer; }
   .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 16px; }
-  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .card-header h2 { font-size: 16px; font-weight: 700; }
+  .card-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .btn-primary { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13px; }
+  .btn-excel { background: #16a34a; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .btn-excel:hover { background: #15803d; }
   .btn-secondary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
   .btn-danger { background: #fef2f2; color: #dc2626; border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
   .btn-add-period { background: #eff6ff; color: #2563eb; border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
@@ -30,12 +33,13 @@
   .badge { border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; display: inline-block; }
   .actions { display: flex; gap: 6px; }
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .modal { background: #fff; border-radius: 14px; padding: 28px; width: 420px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+  .modal { background: #fff; border-radius: 14px; padding: 28px; width: 420px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,.18); max-height: 90vh; overflow-y: auto; }
   .modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
   .form-group { margin-bottom: 14px; }
   .form-group label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 4px; }
   .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 7px 10px; border-radius: 7px; border: 1px solid #d1d5db; font-size: 14px; font-family: inherit; }
   .form-group textarea { height: 70px; resize: vertical; }
+  .form-hint { font-size: 11px; color: #9ca3af; margin-top: 3px; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
   .modal-actions button { padding: 8px 18px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; }
   .modal-actions .cancel { border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; }
@@ -68,7 +72,7 @@
   <div class="header-icon">🏖️</div>
   <div>
     <h1>Control de Vacaciones</h1>
-    <p id="headerSub">INDRA · 12 colaboradores</p>
+    <p id="headerSub">INDRA · 0 colaboradores</p>
   </div>
 </div>
 
@@ -82,7 +86,7 @@
 <div class="filters">
   <span>Filtros:</span>
   <select id="fRol" onchange="render()"><option>Todos</option><option>Big Data</option><option>Cloud</option></select>
-  <select id="fSQ" onchange="render()"></select>
+  <input type="text" id="fSQ" placeholder="Filtrar por SQ..." oninput="render()" style="width:200px"/>
   <select id="fFocal" onchange="render()"></select>
   <select id="fEstado" onchange="render()"></select>
 </div>
@@ -95,7 +99,12 @@
     <h3 id="empModalTitle">Agregar colaborador</h3>
     <div class="form-group"><label>Nombre completo</label><input type="text" id="empNombre"/></div>
     <div class="form-group"><label>Rol</label><select id="empRol"><option>Big Data</option><option>Cloud</option></select></div>
-    <div class="form-group"><label>SQ</label><select id="empSQ"></select></div>
+    <div class="form-group">
+      <label>SQ</label>
+      <input type="text" id="empSQ" placeholder="Escribe el nombre del SQ..." list="sqSuggestions"/>
+      <datalist id="sqSuggestions"></datalist>
+      <div class="form-hint">Puedes escribir libremente o elegir una sugerencia</div>
+    </div>
     <div class="form-group"><label>Focal</label><select id="empFocal"></select></div>
     <div class="form-group"><label>Días asignados</label><input type="number" id="empDias" value="30"/></div>
     <div class="form-group"><label>Comentarios</label><textarea id="empComentarios"></textarea></div>
@@ -114,10 +123,7 @@
     <div class="form-group"><label>Fecha inicio</label><input type="date" id="pInicio" oninput="updateDaysPreview()"/></div>
     <div class="form-group"><label>Fecha fin</label><input type="date" id="pFin" oninput="updateDaysPreview()"/></div>
     <div id="daysPreview" class="days-preview hidden"></div>
-    <div class="form-group"><label>Estado</label>
-      <!-- Las opciones se generan dinámicamente desde const ESTADOS -->
-      <select id="pEstado"></select>
-    </div>
+    <div class="form-group"><label>Estado</label><select id="pEstado"></select></div>
     <div class="form-group"><label>Comentario</label><textarea id="pComentario"></textarea></div>
     <div class="modal-actions">
       <button class="cancel" onclick="closePeriodModal()">Cancelar</button>
@@ -127,7 +133,7 @@
 </div>
 
 <script>
-const SQS = [
+const SQ_SUGGESTIONS = [
   "DWH","SQUAD SPEEDUP","ACTIVOS, PASIVOS Y CAPITAL & CAMBIOS",
   "CONTINUIDAD OPERATIVA","LONDON","MIGRACIÓN CLOUD",
   "PROY. EVOLUCION DATAWAREHOUSE","Proyecto Evolución Datawarehouse",
@@ -136,10 +142,7 @@ const SQS = [
   "SQ SALESFORCE - CORPORACIONES Y EMPRESAS",
   "UNIDAD GEST Y DESHERRA DE INFORMACION","YAKU"
 ];
-const FCL = [
-  "Débora Rimas","Roxana Castro","Eduardo Escusa",
-  "Alan Mato","Johana Loayza"
-];
+const FCL = ["Débora Rimas","Roxana Castro","Eduardo Escusa","Alan Mato","Johana Loayza"];
 const ESTADOS = ["Cumpleaños","Lic. Maternidad","Fmto Fam","Dscso Med","Solicitado","Reportado a INDRA","En proceso de Goce","Finalizada"];
 const ESTADO_COLOR = {
   "Cumpleaños":"#ffd700","Lic. Maternidad":"#c464ae","Fmto Fam":"#a1a09d",
@@ -147,8 +150,8 @@ const ESTADO_COLOR = {
   "En proceso de Goce":"#8b5cf6","Finalizada":"#10b981"
 };
 const ROL_COLOR = {"Big Data":"#0ea5e9","Cloud":"#f97316"};
-
 const SCRIPT_URL = "/api/save";
+
 async function saveToStorage() {
   try {
     const res = await fetch(SCRIPT_URL, {
@@ -159,9 +162,7 @@ async function saveToStorage() {
     const data = await res.json();
     if (data.ok) console.log("✅ Guardado en Google Sheets");
     else console.error("❌ Error:", data.error);
-  } catch(err) {
-    console.error("Error al guardar:", err);
-  }
+  } catch(err) { console.error("Error al guardar:", err); }
 }
 
 async function loadFromStorage() {
@@ -172,9 +173,7 @@ async function loadFromStorage() {
     const data = await res.json();
     if (data.employees) employees = data.employees.map(e => ({...e, id: Number(e.id), diasAsignados: Number(e.diasAsignados)}));
     if (data.periods)   periods   = data.periods.map(p => ({...p, id: Number(p.id), empleadoId: Number(p.empleadoId)}));
-  } catch(err) {
-    console.error("Error al cargar:", err);
-  }
+  } catch(err) { console.error("Error al cargar:", err); }
 }
 
 let employees = [];
@@ -185,28 +184,17 @@ let editPeriodId = null;
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 
-function diffDays(a, b) {
-  return Math.round((new Date(b) - new Date(a)) / 86400000) + 1;
-}
-function diasUsados(empId) {
-  return periods.filter(p => p.empleadoId === empId).reduce((s,p) => s + diffDays(p.inicio, p.fin), 0);
-}
-function badge(text, color) {
-  return `<span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${text}</span>`;
-}
+function diffDays(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000) + 1; }
+function diasUsados(empId) { return periods.filter(p => p.empleadoId === empId).reduce((s,p) => s + diffDays(p.inicio, p.fin), 0); }
+function badge(text, color) { return `<span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${text}</span>`; }
 
 function initSelects() {
-  // Filtro SQ
-  document.getElementById("fSQ").innerHTML = '<option>Todos</option>' + SQS.map(s=>`<option>${s}</option>`).join('');
-  // Filtro Focal
   document.getElementById("fFocal").innerHTML = '<option>Todos</option>' + FCL.map(s=>`<option>${s}</option>`).join('');
-  // Filtro Estado
   document.getElementById("fEstado").innerHTML = '<option>Todos</option>' + ESTADOS.map(s=>`<option>${s}</option>`).join('');
-  // Modal Empleado: SQ y Focal
   document.getElementById("empFocal").innerHTML = FCL.map(s=>`<option>${s}</option>`).join('');
-  document.getElementById("empSQ").innerHTML = SQS.map(s=>`<option>${s}</option>`).join('');
-  // Modal Período: Estado generado desde ESTADOS
   document.getElementById("pEstado").innerHTML = ESTADOS.map(s=>`<option>${s}</option>`).join('');
+  // Sugerencias para el datalist de SQ
+  document.getElementById("sqSuggestions").innerHTML = SQ_SUGGESTIONS.map(s=>`<option value="${s}"></option>`).join('');
 }
 
 function setTab(t) {
@@ -220,13 +208,15 @@ function setTab(t) {
 function getFilters() {
   return {
     rol: document.getElementById("fRol").value,
-    sq: document.getElementById("fSQ").value,
+    sq: document.getElementById("fSQ").value.trim().toLowerCase(),
     focal: document.getElementById("fFocal").value,
     estado: document.getElementById("fEstado").value,
   };
 }
 function empMatches(e, f) {
-  return (f.rol==="Todos"||e.rol===f.rol) && (f.sq==="Todos"||e.sq===f.sq) && (f.focal==="Todos"||e.focal===f.focal);
+  return (f.rol==="Todos"||e.rol===f.rol) &&
+         (f.sq===""||e.sq.toLowerCase().includes(f.sq)) &&
+         (f.focal==="Todos"||e.focal===f.focal);
 }
 
 function render() {
@@ -237,7 +227,6 @@ function render() {
     const e = employees.find(x=>x.id===p.empleadoId);
     return e && empMatches(e,f) && (f.estado==="Todos"||p.estado===f.estado);
   });
-
   let html = "";
   if (currentTab === "tabla") html = renderTabla(filtEmps);
   else if (currentTab === "periodos") html = renderPeriodos(filtPeriods);
@@ -253,7 +242,7 @@ function renderTabla(emps) {
     return `<tr>
       <td><strong>${e.nombre}</strong></td>
       <td>${badge(e.rol, ROL_COLOR[e.rol])}</td>
-      <td>${e.sq}</td>
+      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.sq}">${e.sq}</td>
       <td>${e.focal}</td>
       <td style="text-align:center">${e.diasAsignados}</td>
       <td style="text-align:center;color:#dc2626;font-weight:700">${usados}</td>
@@ -339,12 +328,59 @@ function renderCalendario(emps) {
       <span>${monthName}</span>
       <button onclick="calNext()">›</button>
     </div>
-    <div class="overflow-x"><table>
+    <div class="card-header" style="margin-bottom:12px">
+      <span style="font-size:13px;color:#6b7280">Vista mensual del equipo</span>
+      <button class="btn-excel" onclick="exportCalendarioExcel()">📥 Exportar Excel</button>
+    </div>
+    <div class="overflow-x"><table id="calTable">
       <thead><tr><th style="padding:8px 10px;text-align:left;background:#f8fafc;border-bottom:2px solid #e5e7eb;min-width:140px">Colaborador</th>${headers}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
     <div class="legend">${legend}</div>
   </div>`;
+}
+
+// ── EXPORTAR CALENDARIO A EXCEL ──
+function exportCalendarioExcel() {
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  const monthName = new Date(calYear, calMonth, 1).toLocaleString('es',{month:'long',year:'numeric'});
+  const f = getFilters();
+  const emps = employees.filter(e => empMatches(e, f));
+
+  // Encabezados
+  const headers = ["Colaborador", "Rol", "SQ"];
+  for (let d = 1; d <= daysInMonth; d++) headers.push(String(d));
+  headers.push("Total días de ausencia");
+
+  const rows = emps.map(e => {
+    const row = [e.nombre, e.rol, e.sq];
+    let total = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(calYear, calMonth, d);
+      const p = periods.find(p => {
+        if (p.empleadoId !== e.id) return false;
+        return date >= new Date(p.inicio) && date <= new Date(p.fin);
+      });
+      if (p) { row.push(p.estado); total++; }
+      else row.push("");
+    }
+    row.push(total);
+    return row;
+  });
+
+  // Construir CSV con BOM para que Excel lo abra bien
+  const bom = "\uFEFF";
+  const csv = bom + [headers, ...rows]
+    .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Calendario_Vacaciones_${monthName.replace(/ /g,'_')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function renderResumen() {
@@ -372,7 +408,8 @@ function renderResumen() {
     return `<tr>
       <td><strong>${e.nombre}</strong></td>
       <td>${badge(e.rol,ROL_COLOR[e.rol])}</td>
-      <td>${e.sq}</td><td>${e.focal}</td>
+      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.sq}">${e.sq}</td>
+      <td>${e.focal}</td>
       <td style="text-align:center">${e.diasAsignados}</td>
       <td style="text-align:center;color:#dc2626;font-weight:700">${usados}</td>
       <td style="text-align:center;font-weight:700;color:${disp<5?'#dc2626':'#10b981'}">${disp}</td>
@@ -405,7 +442,7 @@ function openAddEmp() {
   document.getElementById("empModalTitle").textContent = "Agregar colaborador";
   document.getElementById("empNombre").value = "";
   document.getElementById("empRol").value = "Big Data";
-  document.getElementById("empSQ").value = SQS[0];
+  document.getElementById("empSQ").value = "";
   document.getElementById("empFocal").value = FCL[0];
   document.getElementById("empDias").value = 30;
   document.getElementById("empComentarios").value = "";
@@ -417,7 +454,7 @@ function openEditEmp(id) {
   document.getElementById("empModalTitle").textContent = "Editar colaborador";
   document.getElementById("empNombre").value = e.nombre;
   document.getElementById("empRol").value = e.rol;
-  document.getElementById("empSQ").value = e.sq;
+  document.getElementById("empSQ").value = e.sq;   // ← texto libre, mantiene el valor existente
   document.getElementById("empFocal").value = e.focal;
   document.getElementById("empDias").value = e.diasAsignados;
   document.getElementById("empComentarios").value = e.comentarios;
@@ -427,9 +464,11 @@ function closeEmpModal() { document.getElementById("empModal").classList.add("hi
 function saveEmp() {
   const nombre = document.getElementById("empNombre").value.trim();
   if (!nombre) return alert("El nombre es obligatorio");
+  const sq = document.getElementById("empSQ").value.trim();
+  if (!sq) return alert("El SQ es obligatorio");
   const data = {
     nombre, rol: document.getElementById("empRol").value,
-    sq: document.getElementById("empSQ").value,
+    sq,
     focal: document.getElementById("empFocal").value,
     diasAsignados: parseInt(document.getElementById("empDias").value)||30,
     comentarios: document.getElementById("empComentarios").value
@@ -459,7 +498,6 @@ function openAddPeriod(empId) {
   populatePEmp(empId);
   document.getElementById("pInicio").value = "";
   document.getElementById("pFin").value = "";
-  // Resetea al primer estado de ESTADOS
   document.getElementById("pEstado").value = ESTADOS[0];
   document.getElementById("pComentario").value = "";
   document.getElementById("daysPreview").classList.add("hidden");
