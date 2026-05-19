@@ -16,11 +16,10 @@
   .tab.active { background: #2563eb; color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,.3); }
   .filters { background: #fff; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
   .filters span { font-size: 13px; font-weight: 600; color: #6b7280; }
-  .filters select, .filters input[type=text] { padding: 6px 10px; border-radius: 7px; border: 1px solid #d1d5db; font-size: 13px; cursor: pointer; }
+  .filters select, .filters input[type=text] { padding: 6px 10px; border-radius: 7px; border: 1px solid #d1d5db; font-size: 13px; }
   .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 16px; }
   .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .card-header h2 { font-size: 16px; font-weight: 700; }
-  .card-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .btn-primary { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13px; }
   .btn-excel { background: #16a34a; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
   .btn-excel:hover { background: #15803d; }
@@ -86,7 +85,8 @@
 <div class="filters">
   <span>Filtros:</span>
   <select id="fRol" onchange="render()"><option>Todos</option><option>Big Data</option><option>Cloud</option></select>
-  <input type="text" id="fSQ" placeholder="Filtrar por SQ..." oninput="render()" style="width:200px"/>
+  <input type="text" id="fSQ" placeholder="Filtrar por SQ..." oninput="render()" style="width:160px"/>
+  <input type="text" id="fNombre" placeholder="Filtrar por colaborador..." oninput="render()" style="width:180px"/>
   <select id="fFocal" onchange="render()"></select>
   <select id="fEstado" onchange="render()"></select>
 </div>
@@ -152,6 +152,82 @@ const ESTADO_COLOR = {
 const ROL_COLOR = {"Big Data":"#0ea5e9","Cloud":"#f97316"};
 const SCRIPT_URL = "/api/save";
 
+// ── UTILIDADES DE FECHA ──
+// Convierte cualquier formato de fecha a dd/mm/yyyy
+function toDisplay(dateStr) {
+  if (!dateStr) return "";
+  // Ya está en dd/mm/yyyy
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+  // Formato yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const [y,m,d] = dateStr.substring(0,10).split("-");
+    return `${d}/${m}/${y}`;
+  }
+  // Cualquier otro formato (ej: "Wed Apr 01 2026 00:00:00...")
+  const dt = new Date(dateStr);
+  if (!isNaN(dt)) {
+    const d = String(dt.getDate()).padStart(2,"0");
+    const m = String(dt.getMonth()+1).padStart(2,"0");
+    const y = dt.getFullYear();
+    return `${d}/${m}/${y}`;
+  }
+  return dateStr;
+}
+
+// Convierte dd/mm/yyyy → yyyy-mm-dd para el input type="date"
+function toInputDate(dateStr) {
+  if (!dateStr) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    const [d,m,y] = dateStr.split("/");
+    return `${y}-${m}-${d}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return dateStr.substring(0,10);
+  return "";
+}
+
+// Convierte yyyy-mm-dd (valor de input) → dd/mm/yyyy para guardar
+function fromInput(inputVal) {
+  if (!inputVal) return "";
+  const [y,m,d] = inputVal.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+// Calcula diferencia de días entre dos fechas en formato dd/mm/yyyy
+function diffDays(a, b) {
+  const toMs = s => {
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [d,m,y] = s.split("/");
+      return new Date(`${y}-${m}-${d}`).getTime();
+    }
+    return new Date(s).getTime();
+  };
+  return Math.round((toMs(b) - toMs(a)) / 86400000) + 1;
+}
+
+// Compara si una fecha del período cae en un día dado del calendario
+function dateInRange(dateStr, calYear, calMonth, day) {
+  let dt;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    const [d,m,y] = dateStr.split("/");
+    dt = new Date(`${y}-${m}-${d}`);
+  } else {
+    dt = new Date(dateStr);
+  }
+  return dt.getFullYear()===calYear && dt.getMonth()===calMonth && dt.getDate()===day;
+}
+
+function periodCoversDay(p, calYear, calMonth, day) {
+  const target = new Date(calYear, calMonth, day);
+  const toDate = s => {
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [d,m,y] = s.split("/");
+      return new Date(`${y}-${m}-${d}`);
+    }
+    return new Date(s);
+  };
+  return target >= toDate(p.inicio) && target <= toDate(p.fin);
+}
+
 async function saveToStorage() {
   try {
     const res = await fetch(SCRIPT_URL, {
@@ -171,8 +247,16 @@ async function loadFromStorage() {
       '<div style="text-align:center;padding:40px;color:#6b7280">⏳ Cargando datos...</div>';
     const res = await fetch(SCRIPT_URL + "?action=getAll");
     const data = await res.json();
-    if (data.employees) employees = data.employees.map(e => ({...e, id: Number(e.id), diasAsignados: Number(e.diasAsignados)}));
-    if (data.periods)   periods   = data.periods.map(p => ({...p, id: Number(p.id), empleadoId: Number(p.empleadoId)}));
+    if (data.employees) employees = data.employees.map(e => ({
+      ...e, id: Number(e.id), diasAsignados: Number(e.diasAsignados)
+    }));
+    if (data.periods) periods = data.periods.map(p => ({
+      ...p,
+      id: Number(p.id),
+      empleadoId: Number(p.empleadoId),
+      inicio: toDisplay(p.inicio),   // ← normalizar al cargar
+      fin:    toDisplay(p.fin)       // ← normalizar al cargar
+    }));
   } catch(err) { console.error("Error al cargar:", err); }
 }
 
@@ -184,16 +268,18 @@ let editPeriodId = null;
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 
-function diffDays(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000) + 1; }
-function diasUsados(empId) { return periods.filter(p => p.empleadoId === empId).reduce((s,p) => s + diffDays(p.inicio, p.fin), 0); }
-function badge(text, color) { return `<span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${text}</span>`; }
+function diasUsados(empId) {
+  return periods.filter(p => p.empleadoId === empId).reduce((s,p) => s + diffDays(p.inicio, p.fin), 0);
+}
+function badge(text, color) {
+  return `<span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${text}</span>`;
+}
 
 function initSelects() {
   document.getElementById("fFocal").innerHTML = '<option>Todos</option>' + FCL.map(s=>`<option>${s}</option>`).join('');
   document.getElementById("fEstado").innerHTML = '<option>Todos</option>' + ESTADOS.map(s=>`<option>${s}</option>`).join('');
   document.getElementById("empFocal").innerHTML = FCL.map(s=>`<option>${s}</option>`).join('');
   document.getElementById("pEstado").innerHTML = ESTADOS.map(s=>`<option>${s}</option>`).join('');
-  // Sugerencias para el datalist de SQ
   document.getElementById("sqSuggestions").innerHTML = SQ_SUGGESTIONS.map(s=>`<option value="${s}"></option>`).join('');
 }
 
@@ -207,31 +293,34 @@ function setTab(t) {
 
 function getFilters() {
   return {
-    rol: document.getElementById("fRol").value,
-    sq: document.getElementById("fSQ").value.trim().toLowerCase(),
-    focal: document.getElementById("fFocal").value,
+    rol:    document.getElementById("fRol").value,
+    sq:     document.getElementById("fSQ").value.trim().toLowerCase(),
+    nombre: document.getElementById("fNombre").value.trim().toLowerCase(),
+    focal:  document.getElementById("fFocal").value,
     estado: document.getElementById("fEstado").value,
   };
 }
+
 function empMatches(e, f) {
-  return (f.rol==="Todos"||e.rol===f.rol) &&
-         (f.sq===""||e.sq.toLowerCase().includes(f.sq)) &&
-         (f.focal==="Todos"||e.focal===f.focal);
+  return (f.rol==="Todos"   || e.rol===f.rol) &&
+         (f.sq===""         || e.sq.toLowerCase().includes(f.sq)) &&
+         (f.nombre===""     || e.nombre.toLowerCase().includes(f.nombre)) &&
+         (f.focal==="Todos" || e.focal===f.focal);
 }
 
 function render() {
   document.getElementById("headerSub").textContent = `INDRA · ${employees.length} colaboradores`;
   const f = getFilters();
-  const filtEmps = employees.filter(e => empMatches(e, f));
+  const filtEmps    = employees.filter(e => empMatches(e, f));
   const filtPeriods = periods.filter(p => {
     const e = employees.find(x=>x.id===p.empleadoId);
     return e && empMatches(e,f) && (f.estado==="Todos"||p.estado===f.estado);
   });
   let html = "";
-  if (currentTab === "tabla") html = renderTabla(filtEmps);
-  else if (currentTab === "periodos") html = renderPeriodos(filtPeriods);
-  else if (currentTab === "calendario") html = renderCalendario(filtEmps);
-  else if (currentTab === "resumen") html = renderResumen();
+  if      (currentTab==="tabla")     html = renderTabla(filtEmps);
+  else if (currentTab==="periodos")  html = renderPeriodos(filtPeriods);
+  else if (currentTab==="calendario")html = renderCalendario(filtEmps);
+  else if (currentTab==="resumen")   html = renderResumen();
   document.getElementById("content").innerHTML = html;
 }
 
@@ -270,7 +359,8 @@ function renderPeriodos(prds) {
     return `<tr>
       <td><strong>${e.nombre}</strong></td>
       <td>${badge(e.rol,ROL_COLOR[e.rol])}</td>
-      <td>${p.inicio}</td><td>${p.fin}</td>
+      <td>${p.inicio}</td>
+      <td>${p.fin}</td>
       <td style="text-align:center;font-weight:700">${diffDays(p.inicio,p.fin)}</td>
       <td>${badge(p.estado,ESTADO_COLOR[p.estado])}</td>
       <td style="color:#6b7280">${p.comentario||"—"}</td>
@@ -300,11 +390,8 @@ function renderCalendario(emps) {
   const rows = emps.map(e => {
     const cells = Array.from({length:daysInMonth},(_,i)=>{
       const day = i+1;
+      const p = periods.find(p => p.empleadoId===e.id && periodCoversDay(p, calYear, calMonth, day));
       const d = new Date(calYear,calMonth,day);
-      const p = periods.find(p => {
-        if(p.empleadoId!==e.id) return false;
-        return d>=new Date(p.inicio) && d<=new Date(p.fin);
-      });
       const we = d.getDay()===0||d.getDay()===6;
       if(p) {
         const c = ESTADO_COLOR[p.estado];
@@ -340,41 +427,27 @@ function renderCalendario(emps) {
   </div>`;
 }
 
-// ── EXPORTAR CALENDARIO A EXCEL ──
 function exportCalendarioExcel() {
   const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
   const monthName = new Date(calYear, calMonth, 1).toLocaleString('es',{month:'long',year:'numeric'});
   const f = getFilters();
   const emps = employees.filter(e => empMatches(e, f));
-
-  // Encabezados
-  const headers = ["Colaborador", "Rol", "SQ"];
-  for (let d = 1; d <= daysInMonth; d++) headers.push(String(d));
+  const headers = ["Colaborador","Rol","SQ"];
+  for (let d=1;d<=daysInMonth;d++) headers.push(String(d));
   headers.push("Total días de ausencia");
-
   const rows = emps.map(e => {
     const row = [e.nombre, e.rol, e.sq];
     let total = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(calYear, calMonth, d);
-      const p = periods.find(p => {
-        if (p.empleadoId !== e.id) return false;
-        return date >= new Date(p.inicio) && date <= new Date(p.fin);
-      });
-      if (p) { row.push(p.estado); total++; }
-      else row.push("");
+    for (let d=1;d<=daysInMonth;d++) {
+      const p = periods.find(p => p.empleadoId===e.id && periodCoversDay(p, calYear, calMonth, d));
+      if (p) { row.push(p.estado); total++; } else row.push("");
     }
     row.push(total);
     return row;
   });
-
-  // Construir CSV con BOM para que Excel lo abra bien
   const bom = "\uFEFF";
-  const csv = bom + [headers, ...rows]
-    .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(","))
-    .join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const csv = bom + [headers, ...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -400,7 +473,6 @@ function renderResumen() {
       <div class="progress-label">${pct}% utilizado</div>
     </div>`;
   }).join('');
-
   const indRows = employees.map(e => {
     const usados = diasUsados(e.id);
     const disp = e.diasAsignados - usados;
@@ -423,7 +495,6 @@ function renderResumen() {
       </td>
     </tr>`;
   }).join('');
-
   return `<div class="resumen-grid">${cards}</div>
   <div class="card" style="margin-top:16px">
     <div class="card-header"><h2>Resumen individual</h2></div>
@@ -454,7 +525,7 @@ function openEditEmp(id) {
   document.getElementById("empModalTitle").textContent = "Editar colaborador";
   document.getElementById("empNombre").value = e.nombre;
   document.getElementById("empRol").value = e.rol;
-  document.getElementById("empSQ").value = e.sq;   // ← texto libre, mantiene el valor existente
+  document.getElementById("empSQ").value = e.sq;
   document.getElementById("empFocal").value = e.focal;
   document.getElementById("empDias").value = e.diasAsignados;
   document.getElementById("empComentarios").value = e.comentarios;
@@ -467,17 +538,13 @@ function saveEmp() {
   const sq = document.getElementById("empSQ").value.trim();
   if (!sq) return alert("El SQ es obligatorio");
   const data = {
-    nombre, rol: document.getElementById("empRol").value,
-    sq,
+    nombre, rol: document.getElementById("empRol").value, sq,
     focal: document.getElementById("empFocal").value,
     diasAsignados: parseInt(document.getElementById("empDias").value)||30,
     comentarios: document.getElementById("empComentarios").value
   };
-  if (editEmpId) {
-    employees = employees.map(e => e.id===editEmpId ? {...data, id:editEmpId} : e);
-  } else {
-    employees.push({...data, id: Date.now()});
-  }
+  if (editEmpId) employees = employees.map(e => e.id===editEmpId ? {...data, id:editEmpId} : e);
+  else employees.push({...data, id: Date.now()});
   closeEmpModal(); saveToStorage(); render();
 }
 function deleteEmp(id) {
@@ -508,8 +575,9 @@ function openEditPeriod(id) {
   editPeriodId = id;
   document.getElementById("periodModalTitle").textContent = "Editar período de vacaciones";
   populatePEmp(p.empleadoId);
-  document.getElementById("pInicio").value = p.inicio;
-  document.getElementById("pFin").value = p.fin;
+  // Convertir dd/mm/yyyy → yyyy-mm-dd para el input
+  document.getElementById("pInicio").value = toInputDate(p.inicio);
+  document.getElementById("pFin").value = toInputDate(p.fin);
   document.getElementById("pEstado").value = p.estado;
   document.getElementById("pComentario").value = p.comentario;
   updateDaysPreview();
@@ -521,7 +589,7 @@ function updateDaysPreview() {
   const fin = document.getElementById("pFin").value;
   const preview = document.getElementById("daysPreview");
   if (ini && fin && new Date(fin)>=new Date(ini)) {
-    preview.textContent = `📅 ${diffDays(ini,fin)} días`;
+    preview.textContent = `📅 ${diffDays(fromInput(ini), fromInput(fin))} días`;
     preview.classList.remove("hidden");
   } else { preview.classList.add("hidden"); }
 }
@@ -531,12 +599,15 @@ function savePeriod() {
   const fin = document.getElementById("pFin").value;
   if (!ini || !fin) return alert("Las fechas son obligatorias");
   if (new Date(fin) < new Date(ini)) return alert("La fecha fin debe ser mayor o igual a la fecha inicio");
-  const data = { empleadoId:empId, inicio:ini, fin, estado:document.getElementById("pEstado").value, comentario:document.getElementById("pComentario").value };
-  if (editPeriodId) {
-    periods = periods.map(p => p.id===editPeriodId ? {...data, id:editPeriodId} : p);
-  } else {
-    periods.push({...data, id:Date.now()});
-  }
+  const data = {
+    empleadoId: empId,
+    inicio: fromInput(ini),   // ← siempre guarda dd/mm/yyyy
+    fin:    fromInput(fin),   // ← siempre guarda dd/mm/yyyy
+    estado: document.getElementById("pEstado").value,
+    comentario: document.getElementById("pComentario").value
+  };
+  if (editPeriodId) periods = periods.map(p => p.id===editPeriodId ? {...data, id:editPeriodId} : p);
+  else periods.push({...data, id: Date.now()});
   closePeriodModal(); saveToStorage(); render();
 }
 function deletePeriod(id) {
