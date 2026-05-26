@@ -44,6 +44,7 @@
   .modal-actions .cancel { border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; }
   .modal-actions .save { border: none; background: #2563eb; color: #fff; }
   .days-preview { background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px; color: #2563eb; font-weight: 600; }
+  .alert-dup { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #dc2626; font-weight: 600; margin-bottom: 12px; display: none; }
   .resumen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .resumen-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
   .resumen-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
@@ -97,7 +98,8 @@
 <div class="overlay hidden" id="empModal">
   <div class="modal">
     <h3 id="empModalTitle">Agregar colaborador</h3>
-    <div class="form-group"><label>Nombre completo</label><input type="text" id="empNombre"/></div>
+    <div class="alert-dup" id="empDupAlert">⚠️ Ya existe un colaborador con este nombre.</div>
+    <div class="form-group"><label>Nombre completo</label><input type="text" id="empNombre" oninput="checkEmpDup()"/></div>
     <div class="form-group"><label>Rol</label><select id="empRol"><option>Big Data</option><option>Cloud</option></select></div>
     <div class="form-group">
       <label>SQ</label>
@@ -110,7 +112,7 @@
     <div class="form-group"><label>Comentarios</label><textarea id="empComentarios"></textarea></div>
     <div class="modal-actions">
       <button class="cancel" onclick="closeEmpModal()">Cancelar</button>
-      <button class="save" onclick="saveEmp()">Guardar</button>
+      <button class="save" id="empSaveBtn" onclick="saveEmp()">Guardar</button>
     </div>
   </div>
 </div>
@@ -119,15 +121,16 @@
 <div class="overlay hidden" id="periodModal">
   <div class="modal">
     <h3 id="periodModalTitle">Agregar período de vacaciones</h3>
-    <div class="form-group"><label>Colaborador</label><select id="pEmp"></select></div>
-    <div class="form-group"><label>Fecha inicio</label><input type="date" id="pInicio" oninput="updateDaysPreview()"/></div>
-    <div class="form-group"><label>Fecha fin</label><input type="date" id="pFin" oninput="updateDaysPreview()"/></div>
+    <div class="alert-dup" id="periodDupAlert">⚠️ Ya existe un período con las mismas fechas para este colaborador.</div>
+    <div class="form-group"><label>Colaborador</label><select id="pEmp" onchange="checkPeriodDup()"></select></div>
+    <div class="form-group"><label>Fecha inicio</label><input type="date" id="pInicio" oninput="updateDaysPreview(); checkPeriodDup()"/></div>
+    <div class="form-group"><label>Fecha fin</label><input type="date" id="pFin" oninput="updateDaysPreview(); checkPeriodDup()"/></div>
     <div id="daysPreview" class="days-preview hidden"></div>
     <div class="form-group"><label>Estado</label><select id="pEstado"></select></div>
     <div class="form-group"><label>Comentario</label><textarea id="pComentario"></textarea></div>
     <div class="modal-actions">
       <button class="cancel" onclick="closePeriodModal()">Cancelar</button>
-      <button class="save" onclick="savePeriod()">Guardar</button>
+      <button class="save" id="periodSaveBtn" onclick="savePeriod()">Guardar</button>
     </div>
   </div>
 </div>
@@ -152,82 +155,98 @@ const ESTADO_COLOR = {
 const ROL_COLOR = {"Big Data":"#0ea5e9","Cloud":"#f97316"};
 const SCRIPT_URL = "/api/save";
 
-// ── UTILIDADES DE FECHA ──
-// Convierte cualquier formato de fecha a dd/mm/yyyy
-function toDisplay(dateStr) {
-  if (!dateStr) return "";
-  // Ya está en dd/mm/yyyy
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
-  // Formato yyyy-mm-dd
-  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
-    const [y,m,d] = dateStr.substring(0,10).split("-");
-    return `${d}/${m}/${y}`;
-  }
-  // Cualquier otro formato (ej: "Wed Apr 01 2026 00:00:00...")
-  const dt = new Date(dateStr);
-  if (!isNaN(dt)) {
-    const d = String(dt.getDate()).padStart(2,"0");
-    const m = String(dt.getMonth()+1).padStart(2,"0");
-    const y = dt.getFullYear();
-    return `${d}/${m}/${y}`;
-  }
-  return dateStr;
+// ── FECHAS ──
+function toDisplay(s) {
+  if (!s) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) { const [y,m,d]=s.substring(0,10).split("-"); return `${d}/${m}/${y}`; }
+  const dt = new Date(s);
+  if (!isNaN(dt)) return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`;
+  return s;
 }
-
-// Convierte dd/mm/yyyy → yyyy-mm-dd para el input type="date"
-function toInputDate(dateStr) {
-  if (!dateStr) return "";
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-    const [d,m,y] = dateStr.split("/");
-    return `${y}-${m}-${d}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return dateStr.substring(0,10);
+function toInputDate(s) {
+  if (!s) return "";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) { const [d,m,y]=s.split("/"); return `${y}-${m}-${d}`; }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
   return "";
 }
-
-// Convierte yyyy-mm-dd (valor de input) → dd/mm/yyyy para guardar
-function fromInput(inputVal) {
-  if (!inputVal) return "";
-  const [y,m,d] = inputVal.split("-");
+function fromInput(v) {
+  if (!v) return "";
+  const [y,m,d] = v.split("-");
   return `${d}/${m}/${y}`;
 }
-
-// Calcula diferencia de días entre dos fechas en formato dd/mm/yyyy
 function diffDays(a, b) {
   const toMs = s => {
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-      const [d,m,y] = s.split("/");
-      return new Date(`${y}-${m}-${d}`).getTime();
-    }
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) { const [d,m,y]=s.split("/"); return new Date(`${y}-${m}-${d}`).getTime(); }
     return new Date(s).getTime();
   };
-  return Math.round((toMs(b) - toMs(a)) / 86400000) + 1;
+  return Math.round((toMs(b)-toMs(a))/86400000)+1;
 }
-
-// Compara si una fecha del período cae en un día dado del calendario
-function dateInRange(dateStr, calYear, calMonth, day) {
-  let dt;
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
-    const [d,m,y] = dateStr.split("/");
-    dt = new Date(`${y}-${m}-${d}`);
-  } else {
-    dt = new Date(dateStr);
-  }
-  return dt.getFullYear()===calYear && dt.getMonth()===calMonth && dt.getDate()===day;
-}
-
-function periodCoversDay(p, calYear, calMonth, day) {
-  const target = new Date(calYear, calMonth, day);
+function periodCoversDay(p, cy, cm, day) {
+  const target = new Date(cy,cm,day);
   const toDate = s => {
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-      const [d,m,y] = s.split("/");
-      return new Date(`${y}-${m}-${d}`);
-    }
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) { const [d,m,y]=s.split("/"); return new Date(`${y}-${m}-${d}`); }
     return new Date(s);
   };
-  return target >= toDate(p.inicio) && target <= toDate(p.fin);
+  return target>=toDate(p.inicio) && target<=toDate(p.fin);
 }
 
+// ── VALIDACIONES ANTI-DUPLICADO ──
+function normName(s) { return s.trim().toLowerCase().replace(/\s+/g," "); }
+
+function checkEmpDup() {
+  const nombre = document.getElementById("empNombre").value;
+  const alert  = document.getElementById("empDupAlert");
+  const btn    = document.getElementById("empSaveBtn");
+  const norm   = normName(nombre);
+  // Excluir el propio registro al editar
+  const isDup  = norm.length > 0 && employees.some(e =>
+    e.id !== editEmpId && normName(e.nombre) === norm
+  );
+  alert.style.display = isDup ? "block" : "none";
+  btn.disabled = isDup;
+  btn.style.opacity = isDup ? ".5" : "1";
+}
+
+function checkPeriodDup() {
+  const empId = parseInt(document.getElementById("pEmp").value);
+  const ini   = fromInput(document.getElementById("pInicio").value);
+  const fin   = fromInput(document.getElementById("pFin").value);
+  const alert = document.getElementById("periodDupAlert");
+  const btn   = document.getElementById("periodSaveBtn");
+  if (!ini || !fin) { alert.style.display="none"; btn.disabled=false; btn.style.opacity="1"; return; }
+  const isDup = periods.some(p =>
+    p.id !== editPeriodId &&
+    p.empleadoId === empId &&
+    p.inicio === ini &&
+    p.fin    === fin
+  );
+  alert.style.display = isDup ? "block" : "none";
+  btn.disabled = isDup;
+  btn.style.opacity = isDup ? ".5" : "1";
+}
+
+// ── DEDUPLICAR AL CARGAR (por si Google Sheets tiene duplicados previos) ──
+function deduplicateEmployees(arr) {
+  const seen = new Set();
+  return arr.filter(e => {
+    const key = normName(e.nombre);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function deduplicatePeriods(arr) {
+  const seen = new Set();
+  return arr.filter(p => {
+    const key = `${p.empleadoId}|${p.inicio}|${p.fin}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// ── STORAGE ──
 async function saveToStorage() {
   try {
     const res = await fetch(SCRIPT_URL, {
@@ -245,49 +264,46 @@ async function loadFromStorage() {
   try {
     document.getElementById("content").innerHTML =
       '<div style="text-align:center;padding:40px;color:#6b7280">⏳ Cargando datos...</div>';
-    const res = await fetch(SCRIPT_URL + "?action=getAll");
+    const res  = await fetch(SCRIPT_URL + "?action=getAll");
     const data = await res.json();
-    if (data.employees) employees = data.employees.map(e => ({
-      ...e, id: Number(e.id), diasAsignados: Number(e.diasAsignados)
-    }));
-    if (data.periods) periods = data.periods.map(p => ({
-      ...p,
-      id: Number(p.id),
-      empleadoId: Number(p.empleadoId),
-      inicio: toDisplay(p.inicio),   // ← normalizar al cargar
-      fin:    toDisplay(p.fin)       // ← normalizar al cargar
-    }));
+    if (data.employees) {
+      const raw = data.employees.map(e => ({
+        ...e, id: Number(e.id), diasAsignados: Number(e.diasAsignados)
+      }));
+      employees = deduplicateEmployees(raw);   // ← limpia duplicados al cargar
+    }
+    if (data.periods) {
+      const raw = data.periods.map(p => ({
+        ...p, id: Number(p.id), empleadoId: Number(p.empleadoId),
+        inicio: toDisplay(p.inicio),
+        fin:    toDisplay(p.fin)
+      }));
+      periods = deduplicatePeriods(raw);       // ← limpia duplicados al cargar
+    }
   } catch(err) { console.error("Error al cargar:", err); }
 }
 
-let employees = [];
-let periods = [];
+let employees = [], periods = [];
 let currentTab = "tabla";
-let editEmpId = null;
-let editPeriodId = null;
-let calYear = new Date().getFullYear();
-let calMonth = new Date().getMonth();
+let editEmpId = null, editPeriodId = null;
+let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
 
-function diasUsados(empId) {
-  return periods.filter(p => p.empleadoId === empId).reduce((s,p) => s + diffDays(p.inicio, p.fin), 0);
-}
-function badge(text, color) {
-  return `<span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${text}</span>`;
-}
+function diasUsados(empId) { return periods.filter(p=>p.empleadoId===empId).reduce((s,p)=>s+diffDays(p.inicio,p.fin),0); }
+function badge(text,color) { return `<span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}55">${text}</span>`; }
 
 function initSelects() {
-  document.getElementById("fFocal").innerHTML = '<option>Todos</option>' + FCL.map(s=>`<option>${s}</option>`).join('');
-  document.getElementById("fEstado").innerHTML = '<option>Todos</option>' + ESTADOS.map(s=>`<option>${s}</option>`).join('');
+  document.getElementById("fFocal").innerHTML   = '<option>Todos</option>'+FCL.map(s=>`<option>${s}</option>`).join('');
+  document.getElementById("fEstado").innerHTML  = '<option>Todos</option>'+ESTADOS.map(s=>`<option>${s}</option>`).join('');
   document.getElementById("empFocal").innerHTML = FCL.map(s=>`<option>${s}</option>`).join('');
-  document.getElementById("pEstado").innerHTML = ESTADOS.map(s=>`<option>${s}</option>`).join('');
+  document.getElementById("pEstado").innerHTML  = ESTADOS.map(s=>`<option>${s}</option>`).join('');
   document.getElementById("sqSuggestions").innerHTML = SQ_SUGGESTIONS.map(s=>`<option value="${s}"></option>`).join('');
 }
 
 function setTab(t) {
   currentTab = t;
-  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.tab')[["tabla","periodos","calendario","resumen"].indexOf(t)].classList.add('active');
-  document.getElementById("fEstado").style.display = (t === "periodos") ? "" : "none";
+  document.getElementById("fEstado").style.display = (t==="periodos") ? "" : "none";
   render();
 }
 
@@ -300,37 +316,35 @@ function getFilters() {
     estado: document.getElementById("fEstado").value,
   };
 }
-
-function empMatches(e, f) {
-  return (f.rol==="Todos"   || e.rol===f.rol) &&
-         (f.sq===""         || e.sq.toLowerCase().includes(f.sq)) &&
-         (f.nombre===""     || e.nombre.toLowerCase().includes(f.nombre)) &&
-         (f.focal==="Todos" || e.focal===f.focal);
+function empMatches(e,f) {
+  return (f.rol==="Todos"||e.rol===f.rol) &&
+         (f.sq===""||e.sq.toLowerCase().includes(f.sq)) &&
+         (f.nombre===""||e.nombre.toLowerCase().includes(f.nombre)) &&
+         (f.focal==="Todos"||e.focal===f.focal);
 }
 
 function render() {
   document.getElementById("headerSub").textContent = `INDRA · ${employees.length} colaboradores`;
   const f = getFilters();
-  const filtEmps    = employees.filter(e => empMatches(e, f));
-  const filtPeriods = periods.filter(p => {
+  const filtEmps    = employees.filter(e=>empMatches(e,f));
+  const filtPeriods = periods.filter(p=>{
     const e = employees.find(x=>x.id===p.empleadoId);
     return e && empMatches(e,f) && (f.estado==="Todos"||p.estado===f.estado);
   });
-  let html = "";
-  if      (currentTab==="tabla")     html = renderTabla(filtEmps);
-  else if (currentTab==="periodos")  html = renderPeriodos(filtPeriods);
-  else if (currentTab==="calendario")html = renderCalendario(filtEmps);
-  else if (currentTab==="resumen")   html = renderResumen();
+  let html="";
+  if      (currentTab==="tabla")      html=renderTabla(filtEmps);
+  else if (currentTab==="periodos")   html=renderPeriodos(filtPeriods);
+  else if (currentTab==="calendario") html=renderCalendario(filtEmps);
+  else if (currentTab==="resumen")    html=renderResumen();
   document.getElementById("content").innerHTML = html;
 }
 
 function renderTabla(emps) {
-  const rows = emps.map(e => {
-    const usados = diasUsados(e.id);
-    const disp = e.diasAsignados - usados;
+  const rows = emps.map(e=>{
+    const usados=diasUsados(e.id), disp=e.diasAsignados-usados;
     return `<tr>
       <td><strong>${e.nombre}</strong></td>
-      <td>${badge(e.rol, ROL_COLOR[e.rol])}</td>
+      <td>${badge(e.rol,ROL_COLOR[e.rol])}</td>
       <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.sq}">${e.sq}</td>
       <td>${e.focal}</td>
       <td style="text-align:center">${e.diasAsignados}</td>
@@ -339,8 +353,8 @@ function renderTabla(emps) {
       <td style="color:#6b7280;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.comentarios||"—"}</td>
       <td><div class="actions">
         <button class="btn-add-period" onclick="openAddPeriod(${e.id})">+ Período</button>
-        <button class="btn-secondary" onclick="openEditEmp(${e.id})">✏️</button>
-        <button class="btn-danger" onclick="deleteEmp(${e.id})">🗑️</button>
+        <button class="btn-secondary"  onclick="openEditEmp(${e.id})">✏️</button>
+        <button class="btn-danger"     onclick="deleteEmp(${e.id})">🗑️</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -353,20 +367,19 @@ function renderTabla(emps) {
 }
 
 function renderPeriodos(prds) {
-  const rows = prds.map(p => {
-    const e = employees.find(x=>x.id===p.empleadoId);
-    if (!e) return '';
+  const rows = prds.map(p=>{
+    const e=employees.find(x=>x.id===p.empleadoId);
+    if(!e) return '';
     return `<tr>
       <td><strong>${e.nombre}</strong></td>
       <td>${badge(e.rol,ROL_COLOR[e.rol])}</td>
-      <td>${p.inicio}</td>
-      <td>${p.fin}</td>
+      <td>${p.inicio}</td><td>${p.fin}</td>
       <td style="text-align:center;font-weight:700">${diffDays(p.inicio,p.fin)}</td>
       <td>${badge(p.estado,ESTADO_COLOR[p.estado])}</td>
       <td style="color:#6b7280">${p.comentario||"—"}</td>
       <td><div class="actions">
         <button class="btn-secondary" onclick="openEditPeriod(${p.id})">✏️</button>
-        <button class="btn-danger" onclick="deletePeriod(${p.id})">🗑️</button>
+        <button class="btn-danger"    onclick="deletePeriod(${p.id})">🗑️</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -379,247 +392,194 @@ function renderPeriodos(prds) {
 }
 
 function renderCalendario(emps) {
-  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
-  const monthName = new Date(calYear, calMonth, 1).toLocaleString('es',{month:'long',year:'numeric'});
+  const daysInMonth = new Date(calYear,calMonth+1,0).getDate();
+  const monthName   = new Date(calYear,calMonth,1).toLocaleString('es',{month:'long',year:'numeric'});
   const headers = Array.from({length:daysInMonth},(_,i)=>{
-    const d = new Date(calYear,calMonth,i+1);
-    const we = d.getDay()===0||d.getDay()===6;
+    const d=new Date(calYear,calMonth,i+1), we=d.getDay()===0||d.getDay()===6;
     return `<th style="padding:6px 3px;text-align:center;color:${we?'#9ca3af':'#374151'};min-width:26px;font-size:11px">${i+1}</th>`;
   }).join('');
-
-  const rows = emps.map(e => {
+  const rows = emps.map(e=>{
     const cells = Array.from({length:daysInMonth},(_,i)=>{
-      const day = i+1;
-      const p = periods.find(p => p.empleadoId===e.id && periodCoversDay(p, calYear, calMonth, day));
-      const d = new Date(calYear,calMonth,day);
-      const we = d.getDay()===0||d.getDay()===6;
-      if(p) {
-        const c = ESTADO_COLOR[p.estado];
-        return `<td style="padding:3px 2px;background:${c}22" title="${p.estado}"><div class="cal-cell" style="background:${c}"></div></td>`;
-      }
-      return `<td style="background:${we?'#f9fafb':'transparent'}"></td>`;
+      const day=i+1, p=periods.find(p=>p.empleadoId===e.id&&periodCoversDay(p,calYear,calMonth,day));
+      const we=new Date(calYear,calMonth,day).getDay();
+      if(p){const c=ESTADO_COLOR[p.estado];return `<td style="padding:3px 2px;background:${c}22" title="${p.estado}"><div class="cal-cell" style="background:${c}"></div></td>`;}
+      return `<td style="background:${we===0||we===6?'#f9fafb':'transparent'}"></td>`;
     }).join('');
-    return `<tr>
-      <td style="padding:6px 10px;font-weight:600;white-space:nowrap;min-width:140px">
-        ${e.nombre}<br><span style="font-size:11px;color:${ROL_COLOR[e.rol]};font-weight:600">${e.rol}</span>
-      </td>${cells}</tr>`;
+    return `<tr><td style="padding:6px 10px;font-weight:600;white-space:nowrap;min-width:140px">${e.nombre}<br><span style="font-size:11px;color:${ROL_COLOR[e.rol]};font-weight:600">${e.rol}</span></td>${cells}</tr>`;
   }).join('');
-
-  const legend = Object.entries(ESTADO_COLOR).map(([k,v])=>
-    `<div class="legend-item"><div class="legend-dot" style="background:${v}"></div><span>${k}</span></div>`
-  ).join('');
-
+  const legend = Object.entries(ESTADO_COLOR).map(([k,v])=>`<div class="legend-item"><div class="legend-dot" style="background:${v}"></div><span>${k}</span></div>`).join('');
   return `<div class="card">
-    <div class="cal-nav">
-      <button onclick="calPrev()">‹</button>
-      <span>${monthName}</span>
-      <button onclick="calNext()">›</button>
-    </div>
+    <div class="cal-nav"><button onclick="calPrev()">‹</button><span>${monthName}</span><button onclick="calNext()">›</button></div>
     <div class="card-header" style="margin-bottom:12px">
       <span style="font-size:13px;color:#6b7280">Vista mensual del equipo</span>
       <button class="btn-excel" onclick="exportCalendarioExcel()">📥 Exportar Excel</button>
     </div>
-    <div class="overflow-x"><table id="calTable">
-      <thead><tr><th style="padding:8px 10px;text-align:left;background:#f8fafc;border-bottom:2px solid #e5e7eb;min-width:140px">Colaborador</th>${headers}</tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>
+    <div class="overflow-x"><table><thead><tr><th style="padding:8px 10px;text-align:left;background:#f8fafc;border-bottom:2px solid #e5e7eb;min-width:140px">Colaborador</th>${headers}</tr></thead><tbody>${rows}</tbody></table></div>
     <div class="legend">${legend}</div>
   </div>`;
 }
 
 function exportCalendarioExcel() {
-  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
-  const monthName = new Date(calYear, calMonth, 1).toLocaleString('es',{month:'long',year:'numeric'});
-  const f = getFilters();
-  const emps = employees.filter(e => empMatches(e, f));
-  const headers = ["Colaborador","Rol","SQ"];
-  for (let d=1;d<=daysInMonth;d++) headers.push(String(d));
-  headers.push("Total días de ausencia");
-  const rows = emps.map(e => {
-    const row = [e.nombre, e.rol, e.sq];
-    let total = 0;
-    for (let d=1;d<=daysInMonth;d++) {
-      const p = periods.find(p => p.empleadoId===e.id && periodCoversDay(p, calYear, calMonth, d));
-      if (p) { row.push(p.estado); total++; } else row.push("");
-    }
-    row.push(total);
-    return row;
+  const dim=new Date(calYear,calMonth+1,0).getDate(), mn=new Date(calYear,calMonth,1).toLocaleString('es',{month:'long',year:'numeric'});
+  const f=getFilters(), emps=employees.filter(e=>empMatches(e,f));
+  const hdr=["Colaborador","Rol","SQ",...Array.from({length:dim},(_,i)=>String(i+1)),"Total días de ausencia"];
+  const rows=emps.map(e=>{
+    const row=[e.nombre,e.rol,e.sq]; let tot=0;
+    for(let d=1;d<=dim;d++){const p=periods.find(p=>p.empleadoId===e.id&&periodCoversDay(p,calYear,calMonth,d));if(p){row.push(p.estado);tot++;}else row.push("");}
+    row.push(tot); return row;
   });
-  const bom = "\uFEFF";
-  const csv = bom + [headers, ...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Calendario_Vacaciones_${monthName.replace(/ /g,'_')}.csv`;
+  const csv="\uFEFF"+[hdr,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const a=Object.assign(document.createElement("a"),{href:URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8;"})),download:`Calendario_${mn.replace(/ /g,'_')}.csv`});
   a.click();
-  URL.revokeObjectURL(url);
 }
 
 function renderResumen() {
-  const cards = ["Big Data","Cloud"].map(rol => {
-    const emps = employees.filter(e=>e.rol===rol);
-    const totalAsig = emps.reduce((s,e)=>s+e.diasAsignados,0);
-    const totalUsados = emps.reduce((s,e)=>s+diasUsados(e.id),0);
-    const disp = totalAsig - totalUsados;
-    const pct = totalAsig ? Math.round((totalUsados/totalAsig)*100) : 0;
-    const c = ROL_COLOR[rol];
-    return `<div class="resumen-card">
-      <h3><span class="dot" style="background:${c}"></span>${rol} <span style="color:#6b7280;font-size:13px;font-weight:400">(${emps.length} personas)</span></h3>
-      <div class="resumen-row"><span style="color:#6b7280">Días asignados</span><strong>${totalAsig}</strong></div>
-      <div class="resumen-row"><span style="color:#6b7280">Días usados</span><strong style="color:#dc2626">${totalUsados}</strong></div>
-      <div class="resumen-row"><span style="color:#6b7280">Días disponibles</span><strong style="color:#10b981">${disp}</strong></div>
+  const cards=["Big Data","Cloud"].map(rol=>{
+    const emps=employees.filter(e=>e.rol===rol);
+    const ta=emps.reduce((s,e)=>s+e.diasAsignados,0), tu=emps.reduce((s,e)=>s+diasUsados(e.id),0);
+    const pct=ta?Math.round((tu/ta)*100):0, c=ROL_COLOR[rol];
+    return `<div class="resumen-card"><h3><span class="dot" style="background:${c}"></span>${rol} <span style="color:#6b7280;font-size:13px;font-weight:400">(${emps.length} personas)</span></h3>
+      <div class="resumen-row"><span style="color:#6b7280">Días asignados</span><strong>${ta}</strong></div>
+      <div class="resumen-row"><span style="color:#6b7280">Días usados</span><strong style="color:#dc2626">${tu}</strong></div>
+      <div class="resumen-row"><span style="color:#6b7280">Días disponibles</span><strong style="color:#10b981">${ta-tu}</strong></div>
       <div class="progress-bar"><div class="progress-fill" style="background:${c};width:${pct}%"></div></div>
-      <div class="progress-label">${pct}% utilizado</div>
-    </div>`;
+      <div class="progress-label">${pct}% utilizado</div></div>`;
   }).join('');
-  const indRows = employees.map(e => {
-    const usados = diasUsados(e.id);
-    const disp = e.diasAsignados - usados;
-    const pct = e.diasAsignados ? Math.round((usados/e.diasAsignados)*100) : 0;
+  const indRows=employees.map(e=>{
+    const u=diasUsados(e.id), d=e.diasAsignados-u, pct=e.diasAsignados?Math.round((u/e.diasAsignados)*100):0;
     return `<tr>
-      <td><strong>${e.nombre}</strong></td>
-      <td>${badge(e.rol,ROL_COLOR[e.rol])}</td>
+      <td><strong>${e.nombre}</strong></td><td>${badge(e.rol,ROL_COLOR[e.rol])}</td>
       <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.sq}">${e.sq}</td>
-      <td>${e.focal}</td>
-      <td style="text-align:center">${e.diasAsignados}</td>
-      <td style="text-align:center;color:#dc2626;font-weight:700">${usados}</td>
-      <td style="text-align:center;font-weight:700;color:${disp<5?'#dc2626':'#10b981'}">${disp}</td>
-      <td style="min-width:120px">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="background:#f1f5f9;border-radius:4px;height:8px;flex:1">
-            <div style="background:${pct>80?'#dc2626':'#2563eb'};border-radius:4px;height:8px;width:${pct}%"></div>
-          </div>
-          <span style="font-size:12px;color:#6b7280;min-width:30px">${pct}%</span>
-        </div>
-      </td>
-    </tr>`;
+      <td>${e.focal}</td><td style="text-align:center">${e.diasAsignados}</td>
+      <td style="text-align:center;color:#dc2626;font-weight:700">${u}</td>
+      <td style="text-align:center;font-weight:700;color:${d<5?'#dc2626':'#10b981'}">${d}</td>
+      <td style="min-width:120px"><div style="display:flex;align-items:center;gap:6px">
+        <div style="background:#f1f5f9;border-radius:4px;height:8px;flex:1"><div style="background:${pct>80?'#dc2626':'#2563eb'};border-radius:4px;height:8px;width:${pct}%"></div></div>
+        <span style="font-size:12px;color:#6b7280;min-width:30px">${pct}%</span></div></td></tr>`;
   }).join('');
   return `<div class="resumen-grid">${cards}</div>
-  <div class="card" style="margin-top:16px">
-    <div class="card-header"><h2>Resumen individual</h2></div>
-    <div class="overflow-x"><table>
-      <thead><tr>${["Nombre","Rol","SQ","Focal","Asignados","Usados","Disponibles","% Uso"].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-      <tbody>${indRows}</tbody>
-    </table></div>
-  </div>`;
+  <div class="card" style="margin-top:16px"><div class="card-header"><h2>Resumen individual</h2></div>
+  <div class="overflow-x"><table><thead><tr>${["Nombre","Rol","SQ","Focal","Asignados","Usados","Disponibles","% Uso"].map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${indRows}</tbody></table></div></div>`;
 }
 
-function calPrev() { calMonth--; if(calMonth<0){calMonth=11;calYear--;} render(); }
-function calNext() { calMonth++; if(calMonth>11){calMonth=0;calYear++;} render(); }
+function calPrev(){calMonth--;if(calMonth<0){calMonth=11;calYear--;}render();}
+function calNext(){calMonth++;if(calMonth>11){calMonth=0;calYear++;}render();}
 
 function openAddEmp() {
-  editEmpId = null;
-  document.getElementById("empModalTitle").textContent = "Agregar colaborador";
-  document.getElementById("empNombre").value = "";
-  document.getElementById("empRol").value = "Big Data";
-  document.getElementById("empSQ").value = "";
-  document.getElementById("empFocal").value = FCL[0];
-  document.getElementById("empDias").value = 30;
-  document.getElementById("empComentarios").value = "";
+  editEmpId=null;
+  document.getElementById("empModalTitle").textContent="Agregar colaborador";
+  document.getElementById("empNombre").value="";
+  document.getElementById("empRol").value="Big Data";
+  document.getElementById("empSQ").value="";
+  document.getElementById("empFocal").value=FCL[0];
+  document.getElementById("empDias").value=30;
+  document.getElementById("empComentarios").value="";
+  document.getElementById("empDupAlert").style.display="none";
+  document.getElementById("empSaveBtn").disabled=false;
+  document.getElementById("empSaveBtn").style.opacity="1";
   document.getElementById("empModal").classList.remove("hidden");
 }
 function openEditEmp(id) {
-  const e = employees.find(x=>x.id===id);
-  editEmpId = id;
-  document.getElementById("empModalTitle").textContent = "Editar colaborador";
-  document.getElementById("empNombre").value = e.nombre;
-  document.getElementById("empRol").value = e.rol;
-  document.getElementById("empSQ").value = e.sq;
-  document.getElementById("empFocal").value = e.focal;
-  document.getElementById("empDias").value = e.diasAsignados;
-  document.getElementById("empComentarios").value = e.comentarios;
+  const e=employees.find(x=>x.id===id);
+  editEmpId=id;
+  document.getElementById("empModalTitle").textContent="Editar colaborador";
+  document.getElementById("empNombre").value=e.nombre;
+  document.getElementById("empRol").value=e.rol;
+  document.getElementById("empSQ").value=e.sq;
+  document.getElementById("empFocal").value=e.focal;
+  document.getElementById("empDias").value=e.diasAsignados;
+  document.getElementById("empComentarios").value=e.comentarios;
+  document.getElementById("empDupAlert").style.display="none";
+  document.getElementById("empSaveBtn").disabled=false;
+  document.getElementById("empSaveBtn").style.opacity="1";
   document.getElementById("empModal").classList.remove("hidden");
 }
-function closeEmpModal() { document.getElementById("empModal").classList.add("hidden"); }
+function closeEmpModal(){document.getElementById("empModal").classList.add("hidden");}
 function saveEmp() {
-  const nombre = document.getElementById("empNombre").value.trim();
-  if (!nombre) return alert("El nombre es obligatorio");
-  const sq = document.getElementById("empSQ").value.trim();
-  if (!sq) return alert("El SQ es obligatorio");
-  const data = {
-    nombre, rol: document.getElementById("empRol").value, sq,
-    focal: document.getElementById("empFocal").value,
-    diasAsignados: parseInt(document.getElementById("empDias").value)||30,
-    comentarios: document.getElementById("empComentarios").value
-  };
-  if (editEmpId) employees = employees.map(e => e.id===editEmpId ? {...data, id:editEmpId} : e);
-  else employees.push({...data, id: Date.now()});
+  const nombre=document.getElementById("empNombre").value.trim();
+  if(!nombre) return alert("El nombre es obligatorio");
+  const sq=document.getElementById("empSQ").value.trim();
+  if(!sq) return alert("El SQ es obligatorio");
+  // Validación final anti-duplicado
+  const norm=normName(nombre);
+  const isDup=employees.some(e=>e.id!==editEmpId && normName(e.nombre)===norm);
+  if(isDup) return;
+  const data={nombre,rol:document.getElementById("empRol").value,sq,focal:document.getElementById("empFocal").value,diasAsignados:parseInt(document.getElementById("empDias").value)||30,comentarios:document.getElementById("empComentarios").value};
+  if(editEmpId) employees=employees.map(e=>e.id===editEmpId?{...data,id:editEmpId}:e);
+  else employees.push({...data,id:Date.now()});
   closeEmpModal(); saveToStorage(); render();
 }
-function deleteEmp(id) {
-  if (!confirm("¿Eliminar este colaborador?")) return;
-  employees = employees.filter(e=>e.id!==id);
-  periods = periods.filter(p=>p.empleadoId!==id);
+function deleteEmp(id){
+  if(!confirm("¿Eliminar este colaborador?")) return;
+  employees=employees.filter(e=>e.id!==id);
+  periods=periods.filter(p=>p.empleadoId!==id);
   saveToStorage(); render();
 }
 
-function populatePEmp(selectedId) {
-  const sel = document.getElementById("pEmp");
-  sel.innerHTML = employees.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
-  if (selectedId) sel.value = selectedId;
+function populatePEmp(selectedId){
+  const sel=document.getElementById("pEmp");
+  sel.innerHTML=employees.map(e=>`<option value="${e.id}">${e.nombre}</option>`).join('');
+  if(selectedId) sel.value=selectedId;
 }
-function openAddPeriod(empId) {
-  editPeriodId = null;
-  document.getElementById("periodModalTitle").textContent = "Agregar período de vacaciones";
+function openAddPeriod(empId){
+  editPeriodId=null;
+  document.getElementById("periodModalTitle").textContent="Agregar período de vacaciones";
   populatePEmp(empId);
-  document.getElementById("pInicio").value = "";
-  document.getElementById("pFin").value = "";
-  document.getElementById("pEstado").value = ESTADOS[0];
-  document.getElementById("pComentario").value = "";
+  document.getElementById("pInicio").value="";
+  document.getElementById("pFin").value="";
+  document.getElementById("pEstado").value=ESTADOS[0];
+  document.getElementById("pComentario").value="";
   document.getElementById("daysPreview").classList.add("hidden");
+  document.getElementById("periodDupAlert").style.display="none";
+  document.getElementById("periodSaveBtn").disabled=false;
+  document.getElementById("periodSaveBtn").style.opacity="1";
   document.getElementById("periodModal").classList.remove("hidden");
 }
-function openEditPeriod(id) {
-  const p = periods.find(x=>x.id===id);
-  editPeriodId = id;
-  document.getElementById("periodModalTitle").textContent = "Editar período de vacaciones";
+function openEditPeriod(id){
+  const p=periods.find(x=>x.id===id);
+  editPeriodId=id;
+  document.getElementById("periodModalTitle").textContent="Editar período de vacaciones";
   populatePEmp(p.empleadoId);
-  // Convertir dd/mm/yyyy → yyyy-mm-dd para el input
-  document.getElementById("pInicio").value = toInputDate(p.inicio);
-  document.getElementById("pFin").value = toInputDate(p.fin);
-  document.getElementById("pEstado").value = p.estado;
-  document.getElementById("pComentario").value = p.comentario;
+  document.getElementById("pInicio").value=toInputDate(p.inicio);
+  document.getElementById("pFin").value=toInputDate(p.fin);
+  document.getElementById("pEstado").value=p.estado;
+  document.getElementById("pComentario").value=p.comentario;
+  document.getElementById("periodDupAlert").style.display="none";
+  document.getElementById("periodSaveBtn").disabled=false;
+  document.getElementById("periodSaveBtn").style.opacity="1";
   updateDaysPreview();
   document.getElementById("periodModal").classList.remove("hidden");
 }
-function closePeriodModal() { document.getElementById("periodModal").classList.add("hidden"); }
-function updateDaysPreview() {
-  const ini = document.getElementById("pInicio").value;
-  const fin = document.getElementById("pFin").value;
-  const preview = document.getElementById("daysPreview");
-  if (ini && fin && new Date(fin)>=new Date(ini)) {
-    preview.textContent = `📅 ${diffDays(fromInput(ini), fromInput(fin))} días`;
-    preview.classList.remove("hidden");
-  } else { preview.classList.add("hidden"); }
+function closePeriodModal(){document.getElementById("periodModal").classList.add("hidden");}
+function updateDaysPreview(){
+  const ini=document.getElementById("pInicio").value, fin=document.getElementById("pFin").value, preview=document.getElementById("daysPreview");
+  if(ini&&fin&&new Date(fin)>=new Date(ini)){preview.textContent=`📅 ${diffDays(fromInput(ini),fromInput(fin))} días`;preview.classList.remove("hidden");}
+  else preview.classList.add("hidden");
 }
-function savePeriod() {
-  const empId = parseInt(document.getElementById("pEmp").value);
-  const ini = document.getElementById("pInicio").value;
-  const fin = document.getElementById("pFin").value;
-  if (!ini || !fin) return alert("Las fechas son obligatorias");
-  if (new Date(fin) < new Date(ini)) return alert("La fecha fin debe ser mayor o igual a la fecha inicio");
-  const data = {
-    empleadoId: empId,
-    inicio: fromInput(ini),   // ← siempre guarda dd/mm/yyyy
-    fin:    fromInput(fin),   // ← siempre guarda dd/mm/yyyy
-    estado: document.getElementById("pEstado").value,
-    comentario: document.getElementById("pComentario").value
-  };
-  if (editPeriodId) periods = periods.map(p => p.id===editPeriodId ? {...data, id:editPeriodId} : p);
-  else periods.push({...data, id: Date.now()});
+function savePeriod(){
+  const empId=parseInt(document.getElementById("pEmp").value);
+  const ini=document.getElementById("pInicio").value, fin=document.getElementById("pFin").value;
+  if(!ini||!fin) return alert("Las fechas son obligatorias");
+  if(new Date(fin)<new Date(ini)) return alert("La fecha fin debe ser mayor o igual a la fecha inicio");
+  const iniDisplay=fromInput(ini), finDisplay=fromInput(fin);
+  // Validación final anti-duplicado
+  const isDup=periods.some(p=>p.id!==editPeriodId&&p.empleadoId===empId&&p.inicio===iniDisplay&&p.fin===finDisplay);
+  if(isDup) return;
+  const data={empleadoId:empId,inicio:iniDisplay,fin:finDisplay,estado:document.getElementById("pEstado").value,comentario:document.getElementById("pComentario").value};
+  if(editPeriodId) periods=periods.map(p=>p.id===editPeriodId?{...data,id:editPeriodId}:p);
+  else periods.push({...data,id:Date.now()});
   closePeriodModal(); saveToStorage(); render();
 }
-function deletePeriod(id) {
-  if (!confirm("¿Eliminar este período?")) return;
-  periods = periods.filter(p=>p.id!==id);
+function deletePeriod(id){
+  if(!confirm("¿Eliminar este período?")) return;
+  periods=periods.filter(p=>p.id!==id);
   saveToStorage(); render();
 }
 
-async function init() {
+async function init(){
   await loadFromStorage();
   initSelects();
-  document.getElementById("fEstado").style.display = "none";
+  document.getElementById("fEstado").style.display="none";
   render();
 }
 init();
