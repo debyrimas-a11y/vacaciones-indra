@@ -21,6 +21,7 @@
   .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .card-header h2 { font-size: 16px; font-weight: 700; }
   .btn-primary { background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13px; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
   .btn-excel { background: #16a34a; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
   .btn-excel:hover { background: #15803d; }
   .btn-secondary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
@@ -45,8 +46,8 @@
   .modal-actions .save { border: none; background: #2563eb; color: #fff; }
   .days-preview { background: #eff6ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; font-size: 13px; color: #2563eb; font-weight: 600; }
   .alert-dup { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #dc2626; font-weight: 600; margin-bottom: 12px; display: none; }
-  /* Toast de éxito */
-  .toast { position: fixed; top: 24px; right: 24px; background: #10b981; color: #fff; border-radius: 12px; padding: 14px 22px; font-size: 14px; font-weight: 700; box-shadow: 0 4px 20px rgba(16,185,129,.4); z-index: 999; display: none; animation: slideIn .35s ease; }
+  .toast { position: fixed; top: 24px; right: 24px; background: #10b981; color: #fff; border-radius: 12px; padding: 14px 22px; font-size: 14px; font-weight: 700; box-shadow: 0 4px 20px rgba(16,185,129,.4); z-index: 999; display: none; }
+  .toast.error { background: #dc2626; box-shadow: 0 4px 20px rgba(220,38,38,.4); }
   @keyframes slideIn { from{transform:translateX(120%);opacity:0} to{transform:translateX(0);opacity:1} }
   .resumen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .resumen-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
@@ -66,6 +67,7 @@
   .overflow-x { overflow-x: auto; }
   .cal-cell { width: 22px; height: 22px; border-radius: 4px; margin: 0 auto; }
   .hidden { display: none; }
+  .save-indicator { font-size: 11px; color: #9ca3af; margin-left: 8px; }
   @media(max-width:600px){ .resumen-grid{grid-template-columns:1fr;} }
 </style>
 </head>
@@ -162,34 +164,32 @@ const SCRIPT_URL = "/api/save";
 
 // ── TOAST ──
 let toastTimer;
-function showToast(msg = "✅ Registro guardado exitosamente") {
+function showToast(msg, isError) {
   const t = document.getElementById("toast");
   t.textContent = msg;
+  t.classList.toggle("error", !!isError);
   t.style.display = "block";
   t.style.animation = "none";
-  void t.offsetWidth; // reflow para reiniciar animación
+  void t.offsetWidth;
   t.style.animation = "slideIn .35s ease";
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.style.display = "none"; }, 3000);
 }
 
 // ── FECHAS ──
-// Parsea dd/mm/yyyy sin desfase de zona horaria (usa UTC puro)
 function parseDisplay(s) {
   if (!s) return null;
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
     const [d, m, y] = s.split("/");
-    return new Date(Number(y), Number(m) - 1, Number(d)); // local, sin UTC
+    return new Date(Number(y), Number(m) - 1, Number(d));
   }
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
     const [y, m, d] = s.substring(0, 10).split("-");
     return new Date(Number(y), Number(m) - 1, Number(d));
   }
-  // fallback para formatos largos
   const dt = new Date(s);
   return isNaN(dt) ? null : new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
 }
-
 function toDisplay(s) {
   if (!s) return "";
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
@@ -213,23 +213,16 @@ function diffDays(a, b) {
   if (!da || !db) return 0;
   return Math.round((db - da) / 86400000) + 1;
 }
-
-// ── CALENDARIO: comparación sin desfase ──
 function periodCoversDay(p, cy, cm, day) {
-  // Usamos fechas locales puras para evitar desfase de zona horaria
   const target = new Date(cy, cm, day);
-  const ini    = parseDisplay(p.inicio);
-  const fin    = parseDisplay(p.fin);
+  const ini = parseDisplay(p.inicio), fin = parseDisplay(p.fin);
   if (!ini || !fin) return false;
-  // Normalizar a medianoche para comparar solo fechas
-  target.setHours(0,0,0,0);
-  ini.setHours(0,0,0,0);
-  fin.setHours(0,0,0,0);
+  target.setHours(0,0,0,0); ini.setHours(0,0,0,0); fin.setHours(0,0,0,0);
   return target >= ini && target <= fin;
 }
 
-// ── VALIDACIONES ANTI-DUPLICADO ──
-function normName(s) { return s.trim().toLowerCase().replace(/\s+/g," "); }
+// ── VALIDACIONES ANTI-DUPLICADO (estrictas: id + datos exactos, no solo nombre/fechas) ──
+function normName(s) { return (s||"").trim().toLowerCase().replace(/\s+/g," "); }
 
 function checkEmpDup() {
   const nombre = document.getElementById("empNombre").value;
@@ -239,7 +232,6 @@ function checkEmpDup() {
   const isDup = norm.length > 0 && employees.some(e => e.id !== editEmpId && normName(e.nombre) === norm);
   alertEl.style.display = isDup ? "block" : "none";
   btn.disabled = isDup;
-  btn.style.opacity = isDup ? ".5" : "1";
 }
 
 function checkPeriodDup() {
@@ -248,24 +240,42 @@ function checkPeriodDup() {
   const fin = fromInput(document.getElementById("pFin").value);
   const alertEl = document.getElementById("periodDupAlert");
   const btn = document.getElementById("periodSaveBtn");
-  if (!ini || !fin) { alertEl.style.display="none"; btn.disabled=false; btn.style.opacity="1"; return; }
+  if (!ini || !fin) { alertEl.style.display="none"; btn.disabled=false; return; }
   const isDup = periods.some(p => p.id !== editPeriodId && p.empleadoId === empId && p.inicio === ini && p.fin === fin);
   alertEl.style.display = isDup ? "block" : "none";
   btn.disabled = isDup;
-  btn.style.opacity = isDup ? ".5" : "1";
 }
 
-function deduplicateEmployees(arr) {
+// IMPORTANTE: deduplicar SOLO por ID, nunca por nombre/fechas.
+// La deduplicación anterior por nombre/fechas borraba períodos legítimos
+// (ej. la misma persona con 2 ausencias distintas que coincidían en fecha
+// por error de tipeo, o normalización de mayúsculas) y dejaba solo uno.
+function deduplicateById(arr) {
   const seen = new Set();
-  return arr.filter(e => { const k=normName(e.nombre); if(seen.has(k)) return false; seen.add(k); return true; });
-}
-function deduplicatePeriods(arr) {
-  const seen = new Set();
-  return arr.filter(p => { const k=`${p.empleadoId}|${p.inicio}|${p.fin}`; if(seen.has(k)) return false; seen.add(k); return true; });
+  return arr.filter(item => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 // ── STORAGE ──
-async function saveToStorage() {
+let isLoaded = false;       // evita guardar antes de que termine de cargar
+let isSaving = false;       // evita guardados concurrentes que se pisen entre sí
+
+async function saveToStorage(showMsg = true) {
+  if (!isLoaded) {
+    // Nunca guardar mientras los datos aún no se cargaron de Sheets:
+    // si lo hiciéramos, sobreescribiríamos la hoja con arrays vacíos
+    // y eso explica períodos que "desaparecen después de un tiempo".
+    console.warn("⏳ saveToStorage bloqueado: los datos todavía no han terminado de cargar");
+    return;
+  }
+  if (employees.length === 0 && periods.length === 0) {
+    console.warn("⚠️ saveToStorage bloqueado: intento de guardar estado vacío");
+    return;
+  }
+  isSaving = true;
   try {
     const res = await fetch(SCRIPT_URL, {
       method: "POST",
@@ -273,9 +283,14 @@ async function saveToStorage() {
       body: JSON.stringify({ action: "saveAll", employees, periods })
     });
     const data = await res.json();
-    if (data.ok) showToast("✅ Registro guardado exitosamente");
-    else { showToast("❌ Error al guardar"); console.error("❌ Error:", data.error); }
-  } catch(err) { showToast("❌ Error de conexión"); console.error(err); }
+    if (data.ok) { if (showMsg) showToast("✅ Registro guardado exitosamente"); }
+    else { showToast("❌ Error al guardar", true); console.error("❌ Error:", data.error); }
+  } catch(err) {
+    showToast("❌ Error de conexión, el registro pudo no guardarse", true);
+    console.error(err);
+  } finally {
+    isSaving = false;
+  }
 }
 
 async function loadFromStorage() {
@@ -285,18 +300,23 @@ async function loadFromStorage() {
     const res  = await fetch(SCRIPT_URL + "?action=getAll");
     const data = await res.json();
     if (data.employees) {
-      employees = deduplicateEmployees(data.employees.map(e => ({
+      employees = deduplicateById(data.employees.map(e => ({
         ...e, id: Number(e.id), diasAsignados: Number(e.diasAsignados)
       })));
     }
     if (data.periods) {
-      periods = deduplicatePeriods(data.periods.map(p => ({
+      periods = deduplicateById(data.periods.map(p => ({
         ...p, id: Number(p.id), empleadoId: Number(p.empleadoId),
         inicio: toDisplay(p.inicio),
         fin:    toDisplay(p.fin)
       })));
     }
-  } catch(err) { console.error("Error al cargar:", err); }
+  } catch(err) {
+    console.error("Error al cargar:", err);
+    showToast("❌ No se pudieron cargar los datos. Revisa tu conexión.", true);
+  } finally {
+    isLoaded = true; // se marca true incluso si falló, para no bloquear acciones manuales futuras
+  }
 }
 
 let employees = [], periods = [];
@@ -332,8 +352,6 @@ function getFilters() {
     estado: document.getElementById("fEstado").value,
   };
 }
-
-// Filtro unificado — aplica a TODAS las secciones
 function empMatches(e, f) {
   return (f.rol==="Todos"   || e.rol===f.rol) &&
          (f.sq===""         || (e.sq||"").toLowerCase().includes(f.sq)) &&
@@ -352,8 +370,8 @@ function render() {
   let html = "";
   if      (currentTab==="tabla")      html = renderTabla(filtEmps);
   else if (currentTab==="periodos")   html = renderPeriodos(filtPeriods);
-  else if (currentTab==="calendario") html = renderCalendario(filtEmps);   // ← usa filtEmps
-  else if (currentTab==="resumen")    html = renderResumen(filtEmps);      // ← usa filtEmps
+  else if (currentTab==="calendario") html = renderCalendario(filtEmps);
+  else if (currentTab==="resumen")    html = renderResumen(filtEmps);
   document.getElementById("content").innerHTML = html;
 }
 
@@ -417,11 +435,9 @@ function renderCalendario(emps) {
     const we = dow===0||dow===6;
     return `<th style="padding:6px 3px;text-align:center;color:${we?'#9ca3af':'#374151'};min-width:26px;font-size:11px">${i+1}</th>`;
   }).join('');
-
   const rows = emps.map(e => {
     const cells = Array.from({length:daysInMonth},(_,i)=>{
       const day = i+1;
-      // Busca el período usando comparación local sin desfase
       const p = periods.find(p => p.empleadoId===e.id && periodCoversDay(p,calYear,calMonth,day));
       const dow = new Date(calYear,calMonth,day).getDay();
       const we = dow===0||dow===6;
@@ -436,11 +452,9 @@ function renderCalendario(emps) {
         ${e.nombre}<br><span style="font-size:11px;color:${ROL_COLOR[e.rol]};font-weight:600">${e.rol}</span>
       </td>${cells}</tr>`;
   }).join('');
-
   const legend = Object.entries(ESTADO_COLOR).map(([k,v])=>
     `<div class="legend-item"><div class="legend-dot" style="background:${v}"></div><span>${k}</span></div>`
   ).join('');
-
   return `<div class="card">
     <div class="cal-nav"><button onclick="calPrev()">‹</button><span>${monthName}</span><button onclick="calNext()">›</button></div>
     <div class="card-header" style="margin-bottom:12px">
@@ -477,10 +491,8 @@ function exportCalendarioExcel() {
   a.click();
 }
 
-// renderResumen ahora recibe filtEmps para respetar filtros
 function renderResumen(filtEmps) {
   const empsToShow = filtEmps || employees;
-  const roles = [...new Set(empsToShow.map(e=>e.rol))];
   const cards = ["Big Data","Cloud"].map(rol=>{
     const emps = empsToShow.filter(e=>e.rol===rol);
     if(!emps.length) return '';
@@ -496,7 +508,6 @@ function renderResumen(filtEmps) {
       <div class="progress-label">${pct}% utilizado</div>
     </div>`;
   }).join('');
-
   const indRows = empsToShow.map(e=>{
     const u=diasUsados(e.id), d=e.diasAsignados-u;
     const pct=e.diasAsignados?Math.round((u/e.diasAsignados)*100):0;
@@ -518,7 +529,6 @@ function renderResumen(filtEmps) {
       </td>
     </tr>`;
   }).join('');
-
   return `<div class="resumen-grid">${cards}</div>
   <div class="card" style="margin-top:16px">
     <div class="card-header"><h2>Resumen individual</h2></div>
@@ -541,7 +551,6 @@ function openAddEmp() {
   document.getElementById("empDias").value=30;
   document.getElementById("empDupAlert").style.display="none";
   document.getElementById("empSaveBtn").disabled=false;
-  document.getElementById("empSaveBtn").style.opacity="1";
   document.getElementById("empModal").classList.remove("hidden");
 }
 function openEditEmp(id) {
@@ -555,7 +564,6 @@ function openEditEmp(id) {
   document.getElementById("empComentarios").value=e.comentarios;
   document.getElementById("empDupAlert").style.display="none";
   document.getElementById("empSaveBtn").disabled=false;
-  document.getElementById("empSaveBtn").style.opacity="1";
   document.getElementById("empModal").classList.remove("hidden");
 }
 function closeEmpModal(){document.getElementById("empModal").classList.add("hidden");}
@@ -596,7 +604,6 @@ function openAddPeriod(empId){
   document.getElementById("daysPreview").classList.add("hidden");
   document.getElementById("periodDupAlert").style.display="none";
   document.getElementById("periodSaveBtn").disabled=false;
-  document.getElementById("periodSaveBtn").style.opacity="1";
   document.getElementById("periodModal").classList.remove("hidden");
 }
 function openEditPeriod(id){
@@ -609,7 +616,6 @@ function openEditPeriod(id){
   document.getElementById("pComentario").value=p.comentario;
   document.getElementById("periodDupAlert").style.display="none";
   document.getElementById("periodSaveBtn").disabled=false;
-  document.getElementById("periodSaveBtn").style.opacity="1";
   updateDaysPreview();
   document.getElementById("periodModal").classList.remove("hidden");
 }
